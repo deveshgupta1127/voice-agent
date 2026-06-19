@@ -30,3 +30,11 @@ class BaseLLMProvider(ABC):
     @abstractmethod
     def format_tool_definitions(self, tools: list[dict]) -> list[dict]:
         ...
+
+    @abstractmethod
+    def format_assistant_tool_calls(self, text: str, tool_calls: list[StreamEvent]) -> dict:
+        ...
+
+    @abstractmethod
+    def format_tool_results_message(self, results: list[dict]) -> list[dict]:
+        ...

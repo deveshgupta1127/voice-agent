@@ -79,20 +79,12 @@ class BaseAgent(ABC):
                 full_text += current_text
                 break
 
-            assistant_content = []
-            if current_text:
-                assistant_content.append({"type": "text", "text": current_text})
-                full_text += current_text
-            for tc in pending_tool_calls:
-                assistant_content.append({
-                    "type": "tool_use",
-                    "id": tc.tool_use_id,
-                    "name": tc.tool_name,
-                    "input": tc.tool_args,
-                })
-            messages.append({"role": "assistant", "content": assistant_content})
+            full_text += current_text
+            messages.append(
+                self._llm.format_assistant_tool_calls(current_text, pending_tool_calls)
+            )
 
-            tool_results_content = []
+            tool_results = []
             for tc in pending_tool_calls:
                 await on_tool_call_start(tc.tool_name, tc.tool_args)
                 tool_start = time.time()
@@ -110,13 +102,12 @@ class BaseAgent(ABC):
                 })
                 await on_tool_call_end(tc.tool_name, tc.tool_args, result, duration_ms)
 
-                tool_results_content.append({
-                    "type": "tool_result",
+                tool_results.append({
                     "tool_use_id": tc.tool_use_id,
                     "content": str(result) if not isinstance(result, str) else result,
                 })
 
-            messages.append({"role": "user", "content": tool_results_content})
+            messages.extend(self._llm.format_tool_results_message(tool_results))
 
         llm_total_ms = (time.time() - llm_start) * 1000
 

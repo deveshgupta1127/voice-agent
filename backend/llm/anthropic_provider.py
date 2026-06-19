@@ -95,3 +95,26 @@ class AnthropicProvider(BaseLLMProvider):
                 "input_schema": tool["parameters"],
             })
         return formatted
+
+    def format_assistant_tool_calls(self, text: str, tool_calls: list) -> dict:
+        content = []
+        if text:
+            content.append({"type": "text", "text": text})
+        for tc in tool_calls:
+            content.append({
+                "type": "tool_use",
+                "id": tc.tool_use_id,
+                "name": tc.tool_name,
+                "input": tc.tool_args,
+            })
+        return {"role": "assistant", "content": content}
+
+    def format_tool_results_message(self, results: list[dict]) -> list[dict]:
+        content = []
+        for r in results:
+            content.append({
+                "type": "tool_result",
+                "tool_use_id": r["tool_use_id"],
+                "content": r["content"],
+            })
+        return [{"role": "user", "content": content}]
