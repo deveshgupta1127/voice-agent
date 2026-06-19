@@ -141,6 +141,35 @@ export default function App() {
           break
         }
 
+        case 'session_ended': {
+          const streamText2 = agentStreamRef.current
+          if (streamText2) {
+            setTranscriptEntries((prev) => [
+              ...prev,
+              {
+                role: 'agent',
+                text: streamText2,
+                timestamp: new Date(),
+                agent: currentAgentRef.current,
+              },
+            ])
+          }
+          setAgentStreamText('')
+          agentStreamRef.current = ''
+          setToolCalls([])
+
+          setTimeout(() => {
+            recorderRef.current.stopMonitoring()
+            audioQueueRef.current.stop()
+            ws.disconnect()
+            setSessionState('idle')
+            sessionStateRef.current = 'idle'
+            setCurrentAgent('router')
+            currentAgentRef.current = 'router'
+          }, 500)
+          break
+        }
+
         case 'error':
           console.error(`[${data.stage}] ${data.message}`)
           break

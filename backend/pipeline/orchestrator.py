@@ -18,6 +18,8 @@ from .tts import SarvamTTS
 
 logger = logging.getLogger("voice_agent.orchestrator")
 
+SENTENCE_END_RE = re.compile(r"(?<=[.!?])\s+")
+
 
 class PipelineOrchestrator:
     def __init__(
@@ -102,14 +104,26 @@ class PipelineOrchestrator:
 
         self._latency.mark("llm_start")
 
+        tts_queue: asyncio.Queue[str | None] = asyncio.Queue()
+        text_buffer = ""
         got_first = False
 
         async def on_text_delta(delta: str):
-            nonlocal got_first
+            nonlocal text_buffer, got_first
             if not got_first:
                 self._latency.mark("llm_first_token")
                 got_first = True
             await self._emit({"type": "transcript_agent", "text": delta, "delta": True})
+
+            text_buffer += delta
+            while True:
+                m = SENTENCE_END_RE.search(text_buffer)
+                if not m:
+                    break
+                sentence = text_buffer[: m.start() + 1].strip()
+                text_buffer = text_buffer[m.end() :]
+                if sentence:
+                    await tts_queue.put(sentence)
 
         async def on_tool_call_start(name: str, args: dict):
             await self._emit({"type": "tool_call_start", "name": name, "args": args})
@@ -123,6 +137,8 @@ class PipelineOrchestrator:
                 "duration_ms": round(duration_ms, 1),
             })
 
+        tts_task = asyncio.create_task(self._tts_consumer(tts_queue))
+
         response = await self._active_agent.run(
             self._conversation_history,
             self._session_state,
@@ -133,11 +149,24 @@ class PipelineOrchestrator:
 
         self._latency.mark("llm_end")
 
-        response_text = re.sub(r"\[HANDOVER:\s*\w+\]", "", response.text).strip()
+        remaining = text_buffer.strip()
+        if remaining:
+            await tts_queue.put(remaining)
+
+        await tts_queue.put(None)
+        await tts_task
+
+        end_session = "[END_SESSION]" in response.text
+
+        response_text = re.sub(r"\[HANDOVER:\s*\w+\]", "", response.text)
+        response_text = response_text.replace("[END_SESSION]", "")
+        response_text = response_text.strip()
+
         self._conversation_history.append({"role": "assistant", "content": response_text})
 
         self._update_session_state(response)
 
+        handover_target = None
         if response.handover:
             target = response.handover["target_agent"]
             if target in self._agents:
@@ -147,8 +176,12 @@ class PipelineOrchestrator:
                     "to": target,
                 })
                 self._active_agent = self._agents[target]
+                if target != "router":
+                    handover_target = target
 
-        await self._synthesize_speech(response_text)
+        metrics = self._latency.get_metrics()
+        await self._emit({"type": "latency", "metrics": metrics})
+        await self._emit({"type": "turn_complete"})
 
         self._logger.log_turn(
             self._turn_number,
@@ -156,9 +189,48 @@ class PipelineOrchestrator:
             self._active_agent.name,
             response_text,
             response.tool_calls_made,
-            self._latency.get_metrics(),
+            metrics,
             response.handover,
         )
+
+        if end_session:
+            await self._emit({"type": "session_ended"})
+        elif handover_target:
+            await self._run_agent_turn("[Customer transferred — proceed based on conversation history]")
+        else:
+            await self._emit({"type": "state", "state": "ready"})
+
+    async def _tts_consumer(self, queue: asyncio.Queue[str | None]) -> None:
+        await self._emit({"type": "state", "state": "speaking"})
+        self._latency.mark("tts_start")
+        first_chunk = True
+
+        while True:
+            sentence = await queue.get()
+            if sentence is None:
+                break
+
+            clean = sentence.replace("[END_SESSION]", "").strip()
+            clean = re.sub(r"\[HANDOVER:\s*\w+\]", "", clean).strip()
+            if not clean:
+                continue
+
+            try:
+                wav_chunks = await self._tts.synthesize(clean)
+                if first_chunk:
+                    self._latency.mark("tts_first_chunk")
+                    first_chunk = False
+                for chunk in wav_chunks:
+                    audio_b64 = base64.b64encode(chunk).decode("ascii")
+                    await self._emit({
+                        "type": "audio_chunk",
+                        "data": audio_b64,
+                        "content_type": "audio/wav",
+                    })
+            except Exception as e:
+                logger.error("TTS error for sentence: %s", e)
+
+        self._latency.mark("tts_end")
 
     def _update_session_state(self, response) -> None:
         for tc in response.tool_calls_made:
@@ -167,31 +239,6 @@ class PipelineOrchestrator:
                     self._session_state["verified"] = True
                     self._session_state["customer_id"] = tc["result"].get("customer_id")
                     self._session_state["customer_name"] = tc["result"].get("customer_name")
-
-    async def _synthesize_speech(self, text: str) -> None:
-        await self._emit({"type": "state", "state": "speaking"})
-        self._latency.mark("tts_start")
-
-        try:
-            wav_chunks = await self._tts.synthesize(text)
-
-            self._latency.mark("tts_first_chunk")
-            for chunk in wav_chunks:
-                audio_b64 = base64.b64encode(chunk).decode("ascii")
-                await self._emit({
-                    "type": "audio_chunk",
-                    "data": audio_b64,
-                    "content_type": "audio/wav",
-                })
-        except Exception as e:
-            logger.error("TTS error: %s", e)
-
-        self._latency.mark("tts_end")
-
-        metrics = self._latency.get_metrics()
-        await self._emit({"type": "latency", "metrics": metrics})
-        await self._emit({"type": "turn_complete"})
-        await self._emit({"type": "state", "state": "ready"})
 
     async def shutdown(self) -> None:
         if self._turn_number > 0:
