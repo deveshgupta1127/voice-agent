@@ -34,9 +34,13 @@ export default function App() {
   )
 
   const onSpeechStart = useCallback(() => {
+    if (sessionStateRef.current === 'speaking') {
+      audioQueueRef.current.stop()
+      ws.sendMessage({ type: 'barge_in' })
+    }
     setSessionState('listening')
     sessionStateRef.current = 'listening'
-  }, [])
+  }, [ws])
 
   const onSpeechEnd = useCallback(() => {
     ws.sendMessage({ type: 'stop_recording' })
@@ -61,14 +65,14 @@ export default function App() {
           setSessionState(data.state)
           sessionStateRef.current = data.state
 
-          if (data.state === 'ready') {
+          if (data.state === 'ready' || data.state === 'speaking') {
             const rec = recorderRef.current
             if (!rec.isMonitoring) {
               rec.startMonitoring()
             } else {
               rec.resumeVAD()
             }
-          } else if (data.state === 'processing' || data.state === 'speaking') {
+          } else if (data.state === 'processing') {
             recorderRef.current.pauseVAD()
           }
           break
@@ -115,7 +119,9 @@ export default function App() {
           break
 
         case 'audio_chunk':
-          audioQueueRef.current.enqueue(data.data, data.content_type || 'audio/wav')
+          if (sessionStateRef.current === 'speaking') {
+            audioQueueRef.current.enqueue(data.data, data.content_type || 'audio/wav')
+          }
           break
 
         case 'latency':
@@ -158,15 +164,20 @@ export default function App() {
           agentStreamRef.current = ''
           setToolCalls([])
 
-          setTimeout(() => {
+          const endSession = () => {
+            if (audioQueueRef.current.isPlaying) {
+              setTimeout(endSession, 300)
+              return
+            }
             recorderRef.current.stopMonitoring()
-            audioQueueRef.current.stop()
+            ws.sendMessage({ type: 'end_session' })
             ws.disconnect()
             setSessionState('idle')
             sessionStateRef.current = 'idle'
             setCurrentAgent('router')
             currentAgentRef.current = 'router'
-          }, 500)
+          }
+          setTimeout(endSession, 300)
           break
         }
 

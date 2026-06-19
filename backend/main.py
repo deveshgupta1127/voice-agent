@@ -70,6 +70,9 @@ async def websocket_endpoint(websocket: WebSocket):
             elif msg_type == "stop_recording" and orchestrator:
                 await orchestrator.handle_stop_recording()
 
+            elif msg_type == "barge_in" and orchestrator:
+                await orchestrator.handle_barge_in()
+
             elif msg_type == "end_session":
                 if orchestrator:
                     await orchestrator.shutdown()

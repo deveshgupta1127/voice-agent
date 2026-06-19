@@ -27,7 +27,7 @@ class Settings:
     TTS_ENABLE_COMPLETION: bool = True
 
     DEFAULT_LLM_PROVIDER: str = "anthropic"
-    ANTHROPIC_MODEL: str = "claude-sonnet-4-6"
+    ANTHROPIC_MODEL: str = "claude-haiku-4-5-20251001"
     LLM_MAX_TOKENS: int = 1024
     LLM_TEMPERATURE: float = 0.3
 

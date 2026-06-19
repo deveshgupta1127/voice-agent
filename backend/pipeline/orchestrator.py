@@ -69,6 +69,9 @@ class PipelineOrchestrator:
             speaker=settings.TTS_SPEAKER,
         )
 
+        self._current_turn_task: asyncio.Task | None = None
+        self._spoken_sentences: list[str] = []
+
     async def start(self) -> None:
         await self._emit({"type": "state", "state": "ready"})
         logger.info("Session %s started", self._session_id)
@@ -81,6 +84,7 @@ class PipelineOrchestrator:
             logger.info("No audio to transcribe")
             return
 
+        await self._cancel_current_turn()
         await self._emit({"type": "state", "state": "processing"})
 
         self._latency.reset()
@@ -96,10 +100,51 @@ class PipelineOrchestrator:
             return
 
         await self._emit({"type": "transcript_user", "text": transcript})
-        await self._run_agent_turn(transcript)
+
+        self._current_turn_task = asyncio.create_task(
+            self._safe_run_turn(transcript)
+        )
+
+    async def handle_barge_in(self) -> None:
+        logger.info("Barge-in detected, cancelling current turn")
+        await self._cancel_current_turn()
+
+        spoken = " ".join(self._spoken_sentences)
+        if self._conversation_history and self._conversation_history[-1]["role"] == "user":
+            if spoken:
+                self._conversation_history.append({
+                    "role": "assistant",
+                    "content": spoken + " [interrupted by customer]",
+                })
+            else:
+                self._conversation_history.append({
+                    "role": "assistant",
+                    "content": "[interrupted before responding]",
+                })
+        self._spoken_sentences = []
+
+    async def _cancel_current_turn(self) -> None:
+        if self._current_turn_task and not self._current_turn_task.done():
+            self._current_turn_task.cancel()
+            try:
+                await self._current_turn_task
+            except (asyncio.CancelledError, Exception):
+                pass
+            self._current_turn_task = None
+
+    async def _safe_run_turn(self, transcript: str) -> None:
+        try:
+            await self._run_agent_turn(transcript)
+        except asyncio.CancelledError:
+            logger.info("Turn cancelled (barge-in)")
+        except Exception as e:
+            logger.error("Turn error: %s", e)
+            await self._emit({"type": "error", "stage": "turn", "message": str(e)})
+            await self._emit({"type": "state", "state": "ready"})
 
     async def _run_agent_turn(self, user_text: str) -> None:
         self._turn_number += 1
+        self._spoken_sentences = []
         self._conversation_history.append({"role": "user", "content": user_text})
 
         self._latency.mark("llm_start")
@@ -139,66 +184,75 @@ class PipelineOrchestrator:
 
         tts_task = asyncio.create_task(self._tts_consumer(tts_queue))
 
-        response = await self._active_agent.run(
-            self._conversation_history,
-            self._session_state,
-            on_text_delta,
-            on_tool_call_start,
-            on_tool_call_end,
-        )
+        try:
+            response = await self._active_agent.run(
+                self._conversation_history,
+                self._session_state,
+                on_text_delta,
+                on_tool_call_start,
+                on_tool_call_end,
+            )
 
-        self._latency.mark("llm_end")
+            self._latency.mark("llm_end")
 
-        remaining = text_buffer.strip()
-        if remaining:
-            await tts_queue.put(remaining)
+            remaining = text_buffer.strip()
+            if remaining:
+                await tts_queue.put(remaining)
 
-        await tts_queue.put(None)
-        await tts_task
+            await tts_queue.put(None)
+            await tts_task
 
-        end_session = "[END_SESSION]" in response.text
+            end_session = "[END_SESSION]" in response.text
 
-        response_text = re.sub(r"\[HANDOVER:\s*\w+\]", "", response.text)
-        response_text = response_text.replace("[END_SESSION]", "")
-        response_text = response_text.strip()
+            response_text = re.sub(r"\[HANDOVER:\s*\w+\]", "", response.text)
+            response_text = response_text.replace("[END_SESSION]", "")
+            response_text = response_text.strip()
 
-        self._conversation_history.append({"role": "assistant", "content": response_text})
+            self._conversation_history.append({"role": "assistant", "content": response_text})
 
-        self._update_session_state(response)
+            self._update_session_state(response)
 
-        handover_target = None
-        if response.handover:
-            target = response.handover["target_agent"]
-            if target in self._agents:
-                await self._emit({
-                    "type": "agent_handover",
-                    "from": self._active_agent.name,
-                    "to": target,
-                })
-                self._active_agent = self._agents[target]
-                if target != "router":
-                    handover_target = target
+            handover_target = None
+            if response.handover:
+                target = response.handover["target_agent"]
+                if target in self._agents:
+                    await self._emit({
+                        "type": "agent_handover",
+                        "from": self._active_agent.name,
+                        "to": target,
+                    })
+                    self._active_agent = self._agents[target]
+                    if target != "router":
+                        handover_target = target
 
-        metrics = self._latency.get_metrics()
-        await self._emit({"type": "latency", "metrics": metrics})
-        await self._emit({"type": "turn_complete"})
+            metrics = self._latency.get_metrics()
+            await self._emit({"type": "latency", "metrics": metrics})
+            await self._emit({"type": "turn_complete"})
 
-        self._logger.log_turn(
-            self._turn_number,
-            user_text,
-            self._active_agent.name,
-            response_text,
-            response.tool_calls_made,
-            metrics,
-            response.handover,
-        )
+            self._logger.log_turn(
+                self._turn_number,
+                user_text,
+                self._active_agent.name,
+                response_text,
+                response.tool_calls_made,
+                metrics,
+                response.handover,
+            )
 
-        if end_session:
-            await self._emit({"type": "session_ended"})
-        elif handover_target:
-            await self._run_agent_turn("[Customer transferred — proceed based on conversation history]")
-        else:
-            await self._emit({"type": "state", "state": "ready"})
+            if end_session:
+                await self._emit({"type": "session_ended"})
+            elif handover_target:
+                await self._run_agent_turn("[Customer transferred — proceed based on conversation history]")
+            else:
+                await self._emit({"type": "state", "state": "ready"})
+
+        except asyncio.CancelledError:
+            tts_task.cancel()
+            try:
+                await tts_task
+            except (asyncio.CancelledError, Exception):
+                pass
+            raise
 
     async def _tts_consumer(self, queue: asyncio.Queue[str | None]) -> None:
         await self._emit({"type": "state", "state": "speaking"})
@@ -227,6 +281,7 @@ class PipelineOrchestrator:
                         "data": audio_b64,
                         "content_type": "audio/wav",
                     })
+                self._spoken_sentences.append(clean)
             except Exception as e:
                 logger.error("TTS error for sentence: %s", e)
 
@@ -241,6 +296,7 @@ class PipelineOrchestrator:
                     self._session_state["customer_name"] = tc["result"].get("customer_name")
 
     async def shutdown(self) -> None:
+        await self._cancel_current_turn()
         if self._turn_number > 0:
             self._logger.save()
         logger.info("Session %s shut down. Turns: %d", self._session_id, self._turn_number)
