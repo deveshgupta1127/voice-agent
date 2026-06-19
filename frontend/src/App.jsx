@@ -22,7 +22,7 @@ export default function App() {
   const agentStreamRef = useRef('')
   const currentAgentRef = useRef('router')
   const audioQueueRef = useRef(new AudioPlaybackQueue(24000))
-  const recorderRef = useRef(null)
+  const sessionStateRef = useRef('idle')
 
   const ws = useWebSocket(WS_URL)
 
@@ -33,7 +33,17 @@ export default function App() {
     [ws]
   )
 
-  const recorder = useAudioRecorder(onAudioChunk)
+  const onSpeechStart = useCallback(() => {
+    setSessionState('listening')
+    sessionStateRef.current = 'listening'
+  }, [])
+
+  const onSpeechEnd = useCallback(() => {
+    ws.sendMessage({ type: 'stop_recording' })
+  }, [ws])
+
+  const recorder = useAudioRecorder({ onAudioChunk, onSpeechStart, onSpeechEnd })
+  const recorderRef = useRef(recorder)
   recorderRef.current = recorder
 
   useEffect(() => {
@@ -47,9 +57,22 @@ export default function App() {
   useEffect(() => {
     ws.onMessage((data) => {
       switch (data.type) {
-        case 'state':
+        case 'state': {
           setSessionState(data.state)
+          sessionStateRef.current = data.state
+
+          if (data.state === 'ready') {
+            const rec = recorderRef.current
+            if (!rec.isMonitoring) {
+              rec.startMonitoring()
+            } else {
+              rec.resumeVAD()
+            }
+          } else if (data.state === 'processing' || data.state === 'speaking') {
+            recorderRef.current.pauseVAD()
+          }
           break
+        }
 
         case 'transcript_user':
           setTranscriptEntries((prev) => [
@@ -81,12 +104,7 @@ export default function App() {
           setToolCalls((prev) =>
             prev.map((tc) =>
               tc.name === data.name && tc.status === 'running'
-                ? {
-                    ...tc,
-                    result: data.result,
-                    status: 'complete',
-                    duration_ms: data.duration_ms,
-                  }
+                ? { ...tc, result: data.result, status: 'complete', duration_ms: data.duration_ms }
                 : tc
             )
           )
@@ -132,6 +150,7 @@ export default function App() {
 
   const handleStartSession = useCallback(() => {
     setSessionState('connecting')
+    sessionStateRef.current = 'connecting'
     ws.sendMessage({
       type: 'start_session',
       config: { llm_provider: selectedModel },
@@ -139,15 +158,21 @@ export default function App() {
     ws.connect()
   }, [ws, selectedModel])
 
-  const handleStartRecording = useCallback(() => {
-    setSessionState('listening')
-    recorder.startRecording()
-  }, [recorder])
-
-  const handleStopRecording = useCallback(() => {
-    recorder.stopRecording()
-    ws.sendMessage({ type: 'stop_recording' })
-  }, [recorder, ws])
+  const handleEndSession = useCallback(() => {
+    recorderRef.current.stopMonitoring()
+    audioQueueRef.current.stop()
+    ws.sendMessage({ type: 'end_session' })
+    ws.disconnect()
+    setSessionState('idle')
+    sessionStateRef.current = 'idle'
+    setTranscriptEntries([])
+    setToolCalls([])
+    setLatencyMetrics(null)
+    setAgentStreamText('')
+    agentStreamRef.current = ''
+    setCurrentAgent('router')
+    currentAgentRef.current = 'router'
+  }, [ws])
 
   const isSessionActive = sessionState !== 'idle'
 
@@ -175,22 +200,17 @@ export default function App() {
           <VoiceButton
             sessionState={sessionState}
             onStartSession={handleStartSession}
-            onStartRecording={handleStartRecording}
-            onStopRecording={handleStopRecording}
+            onEndSession={handleEndSession}
+            audioLevel={recorder.audioLevel}
+            vadActive={recorder.vadActive}
           />
           {currentAgent !== 'router' && (
             <div style={styles.agentBadge}>
-              {currentAgent === 'card_agent'
-                ? 'Card Services'
-                : 'Account Services'}
+              {currentAgent === 'card_agent' ? 'Card Services' : 'Account Services'}
             </div>
           )}
-          {recorder.error && (
-            <div style={styles.error}>{recorder.error}</div>
-          )}
-          {ws.lastError && (
-            <div style={styles.error}>{ws.lastError}</div>
-          )}
+          {recorder.error && <div style={styles.error}>{recorder.error}</div>}
+          {ws.lastError && <div style={styles.error}>{ws.lastError}</div>}
         </div>
 
         <div style={styles.rightPanel}>

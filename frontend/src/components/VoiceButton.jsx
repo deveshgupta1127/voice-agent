@@ -3,29 +3,54 @@ import React from 'react'
 const stateConfig = {
   idle: { label: 'Click to start', color: '#475569', icon: 'mic' },
   connecting: { label: 'Connecting...', color: '#f59e0b', icon: 'spinner' },
-  ready: { label: 'Click to speak', color: '#22c55e', icon: 'mic' },
-  listening: { label: 'Listening...', color: '#ef4444', icon: 'pulse' },
+  ready: { label: 'Listening for speech...', color: '#22c55e', icon: 'mic' },
+  listening: { label: 'Speech detected', color: '#ef4444', icon: 'pulse' },
   processing: { label: 'Processing...', color: '#8b5cf6', icon: 'spinner' },
   speaking: { label: 'Agent speaking...', color: '#3b82f6', icon: 'wave' },
 }
 
-export default function VoiceButton({ sessionState, onStartSession, onStartRecording, onStopRecording }) {
+export default function VoiceButton({
+  sessionState,
+  onStartSession,
+  onEndSession,
+  audioLevel,
+  vadActive,
+}) {
   const config = stateConfig[sessionState] || stateConfig.idle
+  const isActive = sessionState !== 'idle' && sessionState !== 'connecting'
+  const isClickable = sessionState === 'idle' || isActive
 
   const handleClick = () => {
     if (sessionState === 'idle') {
       onStartSession()
-    } else if (sessionState === 'ready') {
-      onStartRecording()
-    } else if (sessionState === 'listening') {
-      onStopRecording()
+    } else if (isActive) {
+      onEndSession()
     }
   }
 
-  const isClickable = ['idle', 'ready', 'listening'].includes(sessionState)
+  const levelScale = sessionState === 'ready' || sessionState === 'listening'
+    ? 1 + Math.min(audioLevel * 8, 0.4)
+    : 1
+
+  const ringOpacity = sessionState === 'ready' || sessionState === 'listening'
+    ? Math.min(audioLevel * 15, 1)
+    : 0
 
   return (
     <div style={styles.wrapper}>
+      {/* Audio level ring */}
+      <div
+        style={{
+          ...styles.levelRing,
+          transform: `scale(${levelScale})`,
+          opacity: ringOpacity,
+          borderColor: vadActive ? '#ef4444' : '#22c55e',
+          boxShadow: vadActive
+            ? '0 0 30px rgba(239,68,68,0.4)'
+            : `0 0 ${20 * ringOpacity}px rgba(34,197,94,0.2)`,
+        }}
+      />
+
       <button
         onClick={handleClick}
         disabled={!isClickable}
@@ -42,7 +67,33 @@ export default function VoiceButton({ sessionState, onStartSession, onStartRecor
         {config.icon === 'pulse' && <MicIcon />}
         {config.icon === 'wave' && <WaveIcon />}
       </button>
+
       <span style={styles.label}>{config.label}</span>
+
+      {/* VAD status badge */}
+      {(sessionState === 'ready' || sessionState === 'listening') && (
+        <div style={styles.vadRow}>
+          <span
+            style={{
+              ...styles.vadDot,
+              background: vadActive ? '#ef4444' : '#22c55e',
+              boxShadow: vadActive
+                ? '0 0 8px rgba(239,68,68,0.6)'
+                : '0 0 6px rgba(34,197,94,0.4)',
+            }}
+          />
+          <span style={styles.vadLabel}>
+            {vadActive ? 'Voice detected' : 'Waiting for speech'}
+          </span>
+        </div>
+      )}
+
+      {isActive && (
+        <button onClick={onEndSession} style={styles.endButton}>
+          End Conversation
+        </button>
+      )}
+
       <style>{`
         @keyframes pulse {
           0% { transform: scale(1); }
@@ -94,6 +145,17 @@ const styles = {
     flexDirection: 'column',
     alignItems: 'center',
     gap: '12px',
+    position: 'relative',
+  },
+  levelRing: {
+    position: 'absolute',
+    top: '-8px',
+    width: '96px',
+    height: '96px',
+    borderRadius: '50%',
+    border: '3px solid',
+    transition: 'transform 0.1s ease, opacity 0.1s ease, border-color 0.2s ease',
+    pointerEvents: 'none',
   },
   button: {
     width: '80px',
@@ -104,10 +166,37 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'center',
     transition: 'all 0.3s ease',
+    zIndex: 1,
   },
   label: {
     fontSize: '14px',
     color: '#94a3b8',
     fontWeight: 500,
+  },
+  vadRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+  },
+  vadDot: {
+    width: '8px',
+    height: '8px',
+    borderRadius: '50%',
+    transition: 'all 0.2s ease',
+  },
+  vadLabel: {
+    fontSize: '12px',
+    color: '#64748b',
+  },
+  endButton: {
+    marginTop: '8px',
+    padding: '6px 16px',
+    fontSize: '12px',
+    color: '#94a3b8',
+    background: 'transparent',
+    border: '1px solid #334155',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
   },
 }
