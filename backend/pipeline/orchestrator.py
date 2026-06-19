@@ -194,6 +194,8 @@ class PipelineOrchestrator:
         await self._emit({"type": "state", "state": "ready"})
 
     async def shutdown(self) -> None:
+        if self._turn_number > 0:
+            self._logger.save()
         logger.info("Session %s shut down. Turns: %d", self._session_id, self._turn_number)
 
     async def _emit(self, event: dict) -> None:

@@ -8,8 +8,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from config import get_settings
 from database.connection import init_db, get_db, close_db
 from pipeline.orchestrator import PipelineOrchestrator
+from utils.logger import setup_logging
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+setup_logging()
 logger = logging.getLogger("voice_agent")
 
 

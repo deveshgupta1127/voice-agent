@@ -1,14 +1,44 @@
 import json
 import logging
+import os
 from datetime import datetime, timezone
+from pathlib import Path
+
+LOGS_DIR = Path(__file__).parent.parent / "logs"
+SESSION_LOGS_DIR = LOGS_DIR / "sessions"
 
 logger = logging.getLogger("voice_agent")
+
+
+def setup_logging():
+    LOGS_DIR.mkdir(exist_ok=True)
+    SESSION_LOGS_DIR.mkdir(exist_ok=True)
+
+    root_logger = logging.getLogger("voice_agent")
+    root_logger.setLevel(logging.DEBUG)
+
+    console = logging.StreamHandler()
+    console.setLevel(logging.INFO)
+    console.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s"))
+
+    server_log_path = LOGS_DIR / "server.log"
+    file_handler = logging.FileHandler(server_log_path, encoding="utf-8")
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s"))
+
+    root_logger.addHandler(console)
+    root_logger.addHandler(file_handler)
+
+    logging.getLogger("uvicorn").setLevel(logging.INFO)
+    logging.getLogger("uvicorn.access").setLevel(logging.INFO)
 
 
 class ConversationLogger:
     def __init__(self, session_id: str):
         self._session_id = session_id
+        self._started_at = datetime.now(timezone.utc).isoformat()
         self._turns: list[dict] = []
+        self._errors: list[dict] = []
 
     def log_turn(
         self,
@@ -20,29 +50,75 @@ class ConversationLogger:
         metrics: dict,
         handover: dict | None = None,
     ) -> None:
+        serializable_tool_calls = []
+        for tc in tool_calls:
+            serializable_tool_calls.append({
+                "name": tc.get("name"),
+                "args": tc.get("args"),
+                "result": _make_serializable(tc.get("result")),
+                "duration_ms": tc.get("duration_ms"),
+            })
+
         entry = {
-            "session_id": self._session_id,
             "turn": turn_number,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "user": user_text,
             "agent": agent_name,
             "response": agent_response,
-            "tool_calls": tool_calls,
+            "tool_calls": serializable_tool_calls,
             "metrics": metrics,
             "handover": handover,
         }
         self._turns.append(entry)
 
         logger.info(
-            "Turn %d | Agent: %s | Tools: %d | Total: %sms",
+            "[%s] Turn %d | Agent: %s | Tools: %d | Total: %sms | User: '%.50s' | Response: '%.80s'",
+            self._session_id,
             turn_number,
             agent_name,
             len(tool_calls),
             metrics.get("total_ms", "N/A"),
+            user_text,
+            agent_response,
         )
 
     def log_error(self, stage: str, error: str) -> None:
-        logger.error("Session %s | Stage: %s | Error: %s", self._session_id, stage, error)
+        entry = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "stage": stage,
+            "error": error,
+        }
+        self._errors.append(entry)
+        logger.error("[%s] Stage: %s | Error: %s", self._session_id, stage, error)
+
+    def save(self) -> str:
+        session_data = {
+            "session_id": self._session_id,
+            "started_at": self._started_at,
+            "ended_at": datetime.now(timezone.utc).isoformat(),
+            "total_turns": len(self._turns),
+            "turns": self._turns,
+            "errors": self._errors,
+        }
+
+        filename = f"{self._session_id}.json"
+        filepath = SESSION_LOGS_DIR / filename
+
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(session_data, f, indent=2, ensure_ascii=False, default=str)
+
+        logger.info("[%s] Session log saved to %s (%d turns)", self._session_id, filepath, len(self._turns))
+        return str(filepath)
 
     def get_full_log(self) -> list[dict]:
         return self._turns
+
+
+def _make_serializable(obj):
+    if isinstance(obj, dict):
+        return {k: _make_serializable(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_make_serializable(v) for v in obj]
+    if isinstance(obj, (str, int, float, bool, type(None))):
+        return obj
+    return str(obj)
