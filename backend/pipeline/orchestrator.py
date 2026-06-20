@@ -18,7 +18,7 @@ from .tts import SarvamTTS
 
 logger = logging.getLogger("voice_agent.orchestrator")
 
-SENTENCE_END_RE = re.compile(r"(?<=[.!?])\s+")
+CHUNK_SPLIT_RE = re.compile(r"(?<=[.!?,;:])\s+")
 
 
 class PipelineOrchestrator:
@@ -163,7 +163,7 @@ class PipelineOrchestrator:
 
             text_buffer += delta
             while True:
-                m = SENTENCE_END_RE.search(text_buffer)
+                m = CHUNK_SPLIT_RE.search(text_buffer)
                 if not m:
                     break
                 sentence = text_buffer[: m.start() + 1].strip()
