@@ -147,6 +147,7 @@ class PipelineOrchestrator:
         self._spoken_sentences = []
         self._conversation_history.append({"role": "user", "content": user_text})
 
+        await self._emit({"type": "state", "state": "processing"})
         self._latency.mark("llm_start")
 
         tts_queue: asyncio.Queue[str | None] = asyncio.Queue()
@@ -255,7 +256,6 @@ class PipelineOrchestrator:
             raise
 
     async def _tts_consumer(self, queue: asyncio.Queue[str | None]) -> None:
-        await self._emit({"type": "state", "state": "speaking"})
         self._latency.mark("tts_start")
         first_chunk = True
 
@@ -273,6 +273,7 @@ class PipelineOrchestrator:
                 wav_chunks = await self._tts.synthesize(clean)
                 if first_chunk:
                     self._latency.mark("tts_first_chunk")
+                    await self._emit({"type": "state", "state": "speaking"})
                     first_chunk = False
                 for chunk in wav_chunks:
                     audio_b64 = base64.b64encode(chunk).decode("ascii")
