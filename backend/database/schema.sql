@@ -57,3 +57,42 @@ CREATE TABLE IF NOT EXISTS transactions (
     status          TEXT DEFAULT 'completed',
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS bills (
+    bill_id         TEXT PRIMARY KEY,
+    account_id      TEXT NOT NULL REFERENCES accounts(account_id),
+    biller_name     TEXT NOT NULL,
+    biller_id       TEXT NOT NULL,
+    bill_type       TEXT NOT NULL,
+    amount          REAL NOT NULL,
+    due_date        TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'pending',
+    paid_at         TEXT,
+    payment_ref     TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS loans (
+    loan_id         TEXT PRIMARY KEY,
+    account_id      TEXT NOT NULL REFERENCES accounts(account_id),
+    loan_type       TEXT NOT NULL,
+    principal       REAL NOT NULL,
+    outstanding     REAL NOT NULL,
+    emi_amount      REAL NOT NULL,
+    interest_rate   REAL NOT NULL,
+    tenure_months   INTEGER NOT NULL,
+    next_due_date   TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'active',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS disputes (
+    dispute_id      TEXT PRIMARY KEY,
+    txn_id          TEXT NOT NULL REFERENCES transactions(txn_id),
+    account_id      TEXT NOT NULL REFERENCES accounts(account_id),
+    reason          TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'open',
+    reference       TEXT NOT NULL,
+    raised_at       TEXT DEFAULT CURRENT_TIMESTAMP,
+    resolved_at     TEXT
+);

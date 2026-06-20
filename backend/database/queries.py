@@ -81,3 +81,93 @@ async def get_last_transaction(db: aiosqlite.Connection, account_id: str) -> dic
     if row is None:
         return None
     return dict(row)
+
+
+async def get_recent_transactions(db: aiosqlite.Connection, account_id: str, count: int = 5) -> list[dict]:
+    cursor = await db.execute(
+        "SELECT txn_id, amount, txn_type, description, status, created_at FROM transactions WHERE account_id = ? ORDER BY created_at DESC LIMIT ?",
+        (account_id, count),
+    )
+    rows = await cursor.fetchall()
+    return [dict(r) for r in rows]
+
+
+async def get_transaction(db: aiosqlite.Connection, txn_id: str) -> dict | None:
+    cursor = await db.execute("SELECT * FROM transactions WHERE txn_id = ?", (txn_id,))
+    row = await cursor.fetchone()
+    if row is None:
+        return None
+    return dict(row)
+
+
+async def get_dispute_by_txn(db: aiosqlite.Connection, txn_id: str) -> dict | None:
+    cursor = await db.execute(
+        "SELECT * FROM disputes WHERE txn_id = ? ORDER BY raised_at DESC LIMIT 1",
+        (txn_id,),
+    )
+    row = await cursor.fetchone()
+    if row is None:
+        return None
+    return dict(row)
+
+
+async def insert_dispute(
+    db: aiosqlite.Connection,
+    dispute_id: str,
+    txn_id: str,
+    account_id: str,
+    reason: str,
+    reference: str,
+) -> None:
+    await db.execute(
+        "INSERT INTO disputes (dispute_id, txn_id, account_id, reason, status, reference) VALUES (?, ?, ?, ?, 'open', ?)",
+        (dispute_id, txn_id, account_id, reason, reference),
+    )
+    await db.commit()
+
+
+async def get_pending_bills_by_account(db: aiosqlite.Connection, account_id: str) -> list[dict]:
+    cursor = await db.execute(
+        "SELECT bill_id, biller_name, biller_id, bill_type, amount, due_date, status FROM bills WHERE account_id = ? AND status IN ('pending', 'overdue') ORDER BY due_date ASC",
+        (account_id,),
+    )
+    rows = await cursor.fetchall()
+    return [dict(r) for r in rows]
+
+
+async def get_loans_by_account(db: aiosqlite.Connection, account_id: str) -> list[dict]:
+    cursor = await db.execute(
+        "SELECT loan_id, loan_type, principal, outstanding, emi_amount, interest_rate, tenure_months, next_due_date, status FROM loans WHERE account_id = ? AND status = 'active'",
+        (account_id,),
+    )
+    rows = await cursor.fetchall()
+    return [dict(r) for r in rows]
+
+
+async def get_bill_by_biller(db: aiosqlite.Connection, account_id: str, biller_id: str) -> dict | None:
+    cursor = await db.execute(
+        "SELECT * FROM bills WHERE account_id = ? AND biller_id = ? AND status IN ('pending', 'overdue') LIMIT 1",
+        (account_id, biller_id),
+    )
+    row = await cursor.fetchone()
+    if row is None:
+        return None
+    return dict(row)
+
+
+async def update_bill_paid(db: aiosqlite.Connection, bill_id: str, reference: str) -> bool:
+    cursor = await db.execute(
+        "UPDATE bills SET status = 'paid', paid_at = datetime('now'), payment_ref = ? WHERE bill_id = ?",
+        (reference, bill_id),
+    )
+    await db.commit()
+    return cursor.rowcount > 0
+
+
+async def update_account_balance(db: aiosqlite.Connection, account_id: str, new_balance: float) -> bool:
+    cursor = await db.execute(
+        "UPDATE accounts SET balance = ? WHERE account_id = ?",
+        (new_balance, account_id),
+    )
+    await db.commit()
+    return cursor.rowcount > 0

@@ -9,6 +9,8 @@ from config import Settings
 from agents.router_agent import RouterAgent
 from agents.card_agent import CardAgent
 from agents.account_agent import AccountAgent
+from agents.transaction_agent import TransactionAgent
+from agents.payment_agent import PaymentAgent
 from llm.provider_factory import get_provider
 from tools.tool_registry import build_registry
 from utils.metrics import LatencyTracker
@@ -40,6 +42,8 @@ class PipelineOrchestrator:
             "router": RouterAgent(self._llm, self._tool_registry),
             "card_agent": CardAgent(self._llm, self._tool_registry),
             "account_agent": AccountAgent(self._llm, self._tool_registry),
+            "transaction_agent": TransactionAgent(self._llm, self._tool_registry),
+            "payment_agent": PaymentAgent(self._llm, self._tool_registry),
         }
         self._active_agent = self._agents["router"]
 

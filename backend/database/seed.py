@@ -59,4 +59,24 @@ async def seed_database(db: aiosqlite.Connection) -> None:
         ],
     )
 
+    await db.executemany(
+        "INSERT INTO bills (bill_id, account_id, biller_name, biller_id, bill_type, amount, due_date, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+            ("BILL001", "ACC001", "Tata Power", "BP001", "electricity", 2150.00, "2026-07-15", "pending"),
+            ("BILL002", "ACC001", "Municipal Water", "BP002", "water", 850.00, "2026-07-20", "pending"),
+            ("BILL003", "ACC002", "HDFC Life Insurance", "BP003", "insurance", 12500.00, "2026-07-05", "pending"),
+            ("BILL004", "ACC004", "Mahanagar Gas", "BP004", "gas", 1800.00, "2026-07-10", "pending"),
+            ("BILL005", "ACC004", "Adani Electricity", "BP005", "electricity", 3200.00, "2026-06-15", "overdue"),
+            ("BILL006", "ACC001", "Home Loan EMI", "BP006", "emi", 18500.00, "2026-07-05", "pending"),
+        ],
+    )
+
+    await db.executemany(
+        "INSERT INTO loans (loan_id, account_id, loan_type, principal, outstanding, emi_amount, interest_rate, tenure_months, next_due_date, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+            ("LOAN001", "ACC001", "home", 2500000.00, 1850000.00, 18500.00, 8.5, 240, "2026-07-05", "active"),
+            ("LOAN002", "ACC004", "personal", 500000.00, 320000.00, 12800.00, 11.0, 48, "2026-07-10", "active"),
+        ],
+    )
+
     await db.commit()
