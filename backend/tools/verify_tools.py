@@ -76,11 +76,28 @@ def dates_match(stored_dob: str, user_input: str) -> bool:
     return False
 
 
+def names_match(stored_name: str, user_name: str) -> bool:
+    stored = stored_name.strip().lower()
+    user = user_name.strip().lower()
+    if not user:
+        return False
+    if stored == user:
+        return True
+    stored_parts = stored.split()
+    user_parts = user.split()
+    if stored_parts and user_parts and stored_parts[0] == user_parts[0]:
+        return True
+    return False
+
+
 def make_verify_identity(db):
-    async def verify_identity(mobile_number: str, verification_answer: str) -> dict:
+    async def verify_identity(mobile_number: str, verification_answer: str, name: str) -> dict:
         customer = await get_customer_by_mobile(db, mobile_number)
         if customer is None:
             return {"verified": False, "reason": "Customer not found with this mobile number"}
+
+        if not names_match(customer["name"], name):
+            return {"verified": False, "reason": "Name does not match our records"}
 
         if dates_match(customer["dob"], verification_answer):
             return {
