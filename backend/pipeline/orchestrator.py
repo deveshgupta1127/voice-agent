@@ -269,8 +269,9 @@ class PipelineOrchestrator:
             if sentence is None:
                 break
 
-            clean = sentence.replace("[END_SESSION]", "").strip()
-            clean = re.sub(r"\[HANDOVER:\s*\w+\]", "", clean).strip()
+            clean = re.sub(r"\[.*?\]", "", sentence).strip()
+            clean = re.sub(r"\[.*$", "", clean).strip()
+            clean = re.sub(r"^[^\[]*\]", "", clean).strip()
             if not clean:
                 continue
 
