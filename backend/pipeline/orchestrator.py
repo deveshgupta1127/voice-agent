@@ -94,7 +94,8 @@ class PipelineOrchestrator:
         self._latency.reset()
         self._latency.mark("stt_start")
 
-        transcript, stt_latency_ms = await self._stt.transcribe()
+        transcript, detected_language, stt_latency_ms = await self._stt.transcribe()
+        self._session_state["language"] = detected_language
 
         self._latency.mark("stt_end")
 
@@ -274,7 +275,8 @@ class PipelineOrchestrator:
                 continue
 
             try:
-                wav_chunks = await self._tts.synthesize(clean)
+                tts_language = self._session_state.get("language", "en-IN")
+                wav_chunks = await self._tts.synthesize(clean, target_language=tts_language)
                 if first_chunk:
                     self._latency.mark("tts_first_chunk")
                     await self._emit({"type": "state", "state": "speaking"})

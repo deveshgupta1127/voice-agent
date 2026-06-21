@@ -23,13 +23,14 @@ class SarvamTTS:
         self._target_language = target_language
         self._speaker = speaker
 
-    async def synthesize(self, text: str) -> list[bytes]:
+    async def synthesize(self, text: str, target_language: str | None = None) -> list[bytes]:
+        lang = target_language or self._target_language
         loop = asyncio.get_event_loop()
 
         def _call_tts():
             response = self._client.text_to_speech.convert(
                 text=text,
-                target_language_code=self._target_language,
+                target_language_code=lang,
                 model=self._model,
                 speaker=self._speaker,
             )

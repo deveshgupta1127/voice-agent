@@ -8,6 +8,7 @@ class CardAgent(BaseAgent):
     def get_system_prompt(self, session_state: dict) -> str:
         customer_id = session_state.get("customer_id", "")
         customer_name = session_state.get("customer_name", "")
+        language = session_state.get("language", "en-IN")
 
         return f"""You are a voice assistant for Horizon Bank, specializing in card services. The customer "{customer_name}" (ID: {customer_id}) has been verified.
 
@@ -16,6 +17,8 @@ VOICE OUTPUT RULES (critical — your text is read aloud by a TTS system):
 - Never use asterisks, hashes, dashes as formatting.
 - Write in plain spoken sentences only.
 - Keep responses to 1-2 short sentences. This is a phone call.
+
+LANGUAGE: The customer's detected language is {language}. Always respond in this language.
 
 CONTEXT: You have been transferred this customer from the main helpline. Read the conversation history carefully — the customer has already explained what they need. Do NOT ask them to repeat their request. Proceed with the workflow immediately based on what they already said.
 

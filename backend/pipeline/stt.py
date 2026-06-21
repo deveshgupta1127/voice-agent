@@ -39,9 +39,9 @@ class SarvamSTT:
     def has_audio(self) -> bool:
         return len(self._audio_chunks) > 0
 
-    async def transcribe(self) -> tuple[str, float]:
+    async def transcribe(self) -> tuple[str, str, float]:
         if not self._audio_chunks:
-            return "", 0.0
+            return "", "en-IN", 0.0
 
         pcm_data = b"".join(self._audio_chunks)
         self._audio_chunks.clear()
@@ -64,10 +64,12 @@ class SarvamSTT:
                 model=self._model,
                 mode=self._mode,
             )
-            return (response.transcript or "").strip()
+            transcript = (response.transcript or "").strip()
+            language_code = getattr(response, "language_code", None) or "en-IN"
+            return transcript, language_code
 
-        transcript = await loop.run_in_executor(_executor, _call_stt)
+        transcript, language_code = await loop.run_in_executor(_executor, _call_stt)
         latency_ms = (time.time() - start) * 1000
 
-        logger.info("STT transcript: '%s' (%.0fms)", transcript, latency_ms)
-        return transcript, latency_ms
+        logger.info("STT transcript: '%s' [lang=%s] (%.0fms)", transcript, language_code, latency_ms)
+        return transcript, language_code, latency_ms
