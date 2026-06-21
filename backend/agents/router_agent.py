@@ -92,10 +92,15 @@ DISAMBIGUATION RULES:
 
 When you determine the intent, include the handover directive at the END of your message. For example: "Let me connect you to our card services. [HANDOVER: card_agent]"
 
+GENERAL QUESTIONS:
+- If the customer asks a general question about what services are available, how something works, or whether we offer a specific service, use search_knowledge_base with their question.
+- Use the results to answer naturally in 1-2 spoken sentences. Do not read the results word for word.
+- If the answer indicates a service is available and the customer wants to use it, route them to the correct agent using the routing table above.
+
 After a sub-task completes, ask "Is there anything else I can help you with?"
 If the customer says no or wants to end the call, say a warm goodbye and include [END_SESSION] at the end of your response.
 """
         return base
 
     def get_tool_names(self) -> list[str]:
-        return ["verify_identity", "escalate_to_human"]
+        return ["verify_identity", "escalate_to_human", "search_knowledge_base"]

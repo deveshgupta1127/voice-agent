@@ -15,4 +15,9 @@ def get_provider(provider_name: str, settings: Settings) -> BaseLLMProvider:
             api_key=settings.SARVAM_API_KEY,
             model=settings.SARVAM_LLM_MODEL,
         )
+    if provider_name == "sarvam-105b":
+        return SarvamProvider(
+            api_key=settings.SARVAM_API_KEY,
+            model=settings.SARVAM_LLM_MODEL_105B,
+        )
     raise ValueError(f"Unknown LLM provider: {provider_name}")

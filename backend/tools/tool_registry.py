@@ -35,13 +35,14 @@ class ToolRegistry:
         return await self._tools[tool_name].handler(**args)
 
 
-def build_registry(db) -> ToolRegistry:
+def build_registry(db, rag=None) -> ToolRegistry:
     from .verify_tools import make_verify_identity
     from .card_tools import make_get_card_list, make_block_card
     from .account_tools import make_get_account_status, make_stop_cheque
     from .transaction_tools import make_get_balance, make_get_customer_accounts, make_get_transactions, make_get_txn_status, make_raise_dispute
     from .payment_tools import make_get_pending_bills, make_get_loan_details, make_make_payment
     from .escalation_tools import make_escalate_to_human
+    from .rag_tools import make_search_knowledge_base
 
     registry = ToolRegistry()
 
@@ -236,5 +237,19 @@ def build_registry(db) -> ToolRegistry:
         },
         handler=make_escalate_to_human(),
     ))
+
+    if rag is not None:
+        registry.register(ToolDefinition(
+            name="search_knowledge_base",
+            description="Searches Horizon Bank's knowledge base to answer general customer questions about available services, policies, and procedures. Use this when the customer asks a general question like 'what can you help me with', 'do you offer fund transfers', 'how does card blocking work', or any question about what services are available. Do NOT use this for performing actual banking operations — use the routing table for that.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "The customer's question in plain English, e.g. 'can I transfer money' or 'what happens when I block my card'"},
+                },
+                "required": ["query"],
+            },
+            handler=make_search_knowledge_base(rag),
+        ))
 
     return registry

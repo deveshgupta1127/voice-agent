@@ -13,6 +13,7 @@ from agents.transaction_agent import TransactionAgent
 from agents.payment_agent import PaymentAgent
 from llm.provider_factory import get_provider
 from tools.tool_registry import build_registry
+from rag.pipeline import RAGPipeline
 from utils.metrics import LatencyTracker
 from utils.logger import ConversationLogger
 from .stt import SarvamSTT
@@ -36,7 +37,8 @@ class PipelineOrchestrator:
         self._db = db
 
         self._llm = get_provider(llm_provider_name, settings)
-        self._tool_registry = build_registry(db)
+        self._rag = RAGPipeline()
+        self._tool_registry = build_registry(db, rag=self._rag)
 
         self._agents = {
             "router": RouterAgent(self._llm, self._tool_registry),
