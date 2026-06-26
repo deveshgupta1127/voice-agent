@@ -19,6 +19,9 @@ class Settings:
     STT_ENCODING: str = "pcm_s16le"
     STT_HIGH_VAD_SENSITIVITY: bool = True
     STT_VAD_SIGNALS: bool = True
+    # Streaming STT (transcribe as the user speaks) with batch fallback.
+    # Set STT_STREAMING=false in .env to force the original batch path.
+    STT_STREAMING: bool = field(default_factory=lambda: os.getenv("STT_STREAMING", "true").lower() != "false")
 
     TTS_MODEL: str = "bulbul:v3"
     TTS_TARGET_LANGUAGE: str = "en-IN"

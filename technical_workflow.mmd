@@ -1,0 +1,27 @@
+flowchart LR
+    A["Customer\nspeaks"] --> B["Mic + VAD\n(React)"]
+    B -->|"PCM base64"| C["WebSocket"]
+    C -->|"audio chunks"| D["STT\nSarvam Saaras v3"]
+    D -->|"transcript + lang"| E["Orchestrator"]
+    E -->|"messages + tools"| F["LLM\nClaude Haiku"]
+    F <-->|"tool loop"| G["Tool Registry\n17 tools"]
+    G <--> H["SQLite DB"]
+    G <--> I["RAG\nFAISS"]
+    F -->|"response text"| J["TTS\nSarvam Bulbul v3"]
+    J -->|"WAV chunks"| K["WebSocket"]
+    K --> L["Speaker\n(React)"]
+    L --> M["Customer\nhears"]
+
+    style A fill:#E7E6E6,stroke:#44546A,color:#000
+    style M fill:#E7E6E6,stroke:#44546A,color:#000
+    style B fill:#5B9BD5,stroke:#5B9BD5,color:#fff
+    style L fill:#5B9BD5,stroke:#5B9BD5,color:#fff
+    style C fill:#A5A5A5,stroke:#A5A5A5,color:#fff
+    style K fill:#A5A5A5,stroke:#A5A5A5,color:#fff
+    style D fill:#70AD47,stroke:#70AD47,color:#fff
+    style J fill:#70AD47,stroke:#70AD47,color:#fff
+    style E fill:#4472C4,stroke:#4472C4,color:#fff
+    style F fill:#4472C4,stroke:#4472C4,color:#fff
+    style G fill:#FFC000,stroke:#FFC000,color:#000
+    style H fill:#ED7D31,stroke:#ED7D31,color:#fff
+    style I fill:#ED7D31,stroke:#ED7D31,color:#fff

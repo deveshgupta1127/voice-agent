@@ -32,7 +32,36 @@ class ToolRegistry:
     async def execute(self, tool_name: str, args: dict) -> Any:
         if tool_name not in self._tools:
             raise KeyError(f"Tool '{tool_name}' not registered")
-        return await self._tools[tool_name].handler(**args)
+        tool = self._tools[tool_name]
+        coerced = self._coerce_args(tool.parameters, args or {})
+        return await tool.handler(**coerced)
+
+    @staticmethod
+    def _coerce_args(schema: dict, args: dict) -> dict:
+        """Coerce tool args to the type the handler expects.
+
+        Models (especially via strict validators) may emit a number where a
+        string is wanted (e.g. mobile_number 9876543210) or vice versa. Coerce
+        based on the declared schema type so handlers always get a clean value.
+        """
+        props = (schema or {}).get("properties", {})
+        out: dict = {}
+        for k, v in args.items():
+            spec = props.get(k, {})
+            t = spec.get("type")
+            types = [t] if isinstance(t, str) else list(t or [])
+            if isinstance(v, bool):
+                out[k] = v
+            elif isinstance(v, (int, float)) and "string" in types:
+                out[k] = str(int(v)) if isinstance(v, float) and v.is_integer() else str(v)
+            elif isinstance(v, str) and "string" not in types and ("integer" in types or "number" in types):
+                try:
+                    out[k] = int(v) if ("integer" in types and "number" not in types) else float(v)
+                except (TypeError, ValueError):
+                    out[k] = v
+            else:
+                out[k] = v
+        return out
 
 
 def build_registry(db, rag=None) -> ToolRegistry:
@@ -53,8 +82,8 @@ def build_registry(db, rag=None) -> ToolRegistry:
             "type": "object",
             "properties": {
                 "name": {"type": "string", "description": "The customer's name as they said it (e.g. 'Rahul' or 'Rahul Sharma'). First name alone is accepted."},
-                "mobile_number": {"type": "string", "description": "The customer's 10-digit registered mobile number, digits only (e.g. 9876543210)"},
-                "verification_answer": {"type": "string", "description": "Customer's date of birth (any format, e.g. '15-08-1990' or 'August 15 1990') OR their last transaction amount as a number string (e.g. '2500')"},
+                "mobile_number": {"type": ["string", "number"], "description": "The customer's 10-digit registered mobile number, digits only (e.g. 9876543210)"},
+                "verification_answer": {"type": ["string", "number"], "description": "Customer's date of birth (any format, e.g. '15-08-1990' or 'August 15 1990') OR their last transaction amount (e.g. '2500')"},
             },
             "required": ["name", "mobile_number", "verification_answer"],
         },

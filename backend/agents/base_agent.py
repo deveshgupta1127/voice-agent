@@ -52,7 +52,7 @@ class BaseAgent(ABC):
         tool_defs = self._tools.get_definitions(tool_names) if tool_names else None
         system_prompt = self.get_system_prompt(session_state)
 
-        messages = [{"role": "system", "content": system_prompt}] + conversation_history
+        messages = [{"role": "system", "content": system_prompt}] + self._normalize_history(conversation_history)
 
         full_text = ""
         tool_calls_made = []
@@ -126,3 +126,60 @@ class BaseAgent(ABC):
         if match:
             return {"target_agent": match.group(1)}
         return None
+
+    @staticmethod
+    def _normalize_history(history: list[dict]) -> list[dict]:
+        """Clean the history into a non-empty, alternating-role sequence.
+
+        Silent routing can leave an empty assistant turn or two user turns in a
+        row in the conversation history; providers like Anthropic reject empty
+        content and require alternating roles. Drop empty-text messages and
+        merge consecutive same-role messages so any history is always valid.
+        """
+        out: list[dict] = []
+        for msg in history:
+            content = msg.get("content")
+            if isinstance(content, str) and not content.strip():
+                continue
+            if (
+                out
+                and out[-1]["role"] == msg["role"]
+                and isinstance(out[-1].get("content"), str)
+                and isinstance(content, str)
+            ):
+                out[-1] = {"role": msg["role"], "content": out[-1]["content"] + "\n" + content}
+            else:
+                out.append({"role": msg["role"], "content": content})
+        # Bound prefill cost on long calls — keep only recent context, and don't
+        # start the window mid-exchange on an assistant turn.
+        if len(out) > 16:
+            out = out[-16:]
+            while out and out[0].get("role") != "user":
+                out.pop(0)
+        return out
+
+    @staticmethod
+    def _accounts_summary(session_state: dict) -> str:
+        accts = session_state.get("accounts") or []
+        if not accts:
+            return "(not pre-loaded — call get_customer_accounts first)"
+        lines = []
+        for a in accts:
+            lines.append(
+                f"- account_id {a.get('account_id')}: {a.get('account_type')} account, "
+                f"balance {a.get('balance')}, status {a.get('status')}"
+            )
+        return "\n".join(lines)
+
+    @staticmethod
+    def _cards_summary(session_state: dict) -> str:
+        cards = session_state.get("cards") or []
+        if not cards:
+            return "(not pre-loaded — call get_card_list first)"
+        lines = []
+        for c in cards:
+            lines.append(
+                f"- card_id {c.get('card_id')}: {c.get('card_network')} {c.get('card_type')} "
+                f"ending {c.get('last_four')}, status {c.get('status')}"
+            )
+        return "\n".join(lines)

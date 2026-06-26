@@ -1,0 +1,28 @@
+flowchart LR
+    A["Customer speaks"] -->|"voice → STT"| B["Router Agent"]
+    B --> C{"Verified?"}
+    C -->|No| D["Ask name, mobile, DOB\n→ verify_identity tool"]
+    D --> C
+    C -->|"Fails twice"| E["Escalate to human"]
+    C -->|Yes| F["Classify intent"]
+    F -->|"[HANDOVER]"| G["Sub-Agent activated\n(Card / Account / Transaction / Payment)"]
+    G --> H["Read conversation context\nUnderstand what user needs"]
+    H --> I["Pick & call tool\n(e.g. get_balance, block_card)"]
+    I --> J["Tool returns result"]
+    J --> K{"Need more\ninfo?"}
+    K -->|Yes| I
+    K -->|No| L["Compose response\n→ TTS → speak to user"]
+    L -->|"[HANDOVER: router]"| M{"Anything\nelse?"}
+    M -->|Yes| F
+    M -->|No| N["End call"]
+    E --> N
+
+    style A fill:#E7E6E6,stroke:#44546A,color:#000
+    style B fill:#4472C4,stroke:#4472C4,color:#fff
+    style G fill:#5B9BD5,stroke:#5B9BD5,color:#fff
+    style N fill:#44546A,stroke:#44546A,color:#fff
+    style E fill:#ED7D31,stroke:#ED7D31,color:#fff
+    style C fill:#FFC000,stroke:#FFC000,color:#000
+    style F fill:#FFC000,stroke:#FFC000,color:#000
+    style K fill:#FFC000,stroke:#FFC000,color:#000
+    style M fill:#FFC000,stroke:#FFC000,color:#000

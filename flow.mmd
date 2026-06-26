@@ -1,0 +1,40 @@
+flowchart TD
+    A["User speaks (mic → STT → text)"] --> B["Router Agent greets user"]
+    B --> C["Router asks for name, mobile, DOB"]
+    C --> D["User provides details (voice → STT)"]
+    D --> E["Tool: verify_identity called"]
+    E --> F{"Verified?"}
+
+    F -- "No (1st/2nd fail)" --> G["Ask user to retry with correct details"]
+    G --> D
+    F -- "No (after 2 failures)" --> H["Tool: escalate_to_human"]
+    H --> END["Call Ends"]
+
+    F -- "Yes" --> I["Set customer context\nGreet by name"]
+    I --> J["Router: 'How can I help you?'"]
+    J --> K["User states their need (voice → STT)"]
+
+    K --> L{"Router classifies intent"}
+    L -- "Card block/lost/stolen" --> M["HANDOVER → Card Agent"]
+    L -- "Balance/transactions/dispute" --> N["HANDOVER → Transaction Agent"]
+    L -- "Account locked/frozen/cheque" --> O["HANDOVER → Account Agent"]
+    L -- "Bills/EMI/loans" --> P["HANDOVER → Payment Agent"]
+    L -- "General question" --> Q["Tool: search_knowledge_base (RAG)\nRouter answers directly"]
+    Q --> ANYTHING
+    L -- "Out of scope / emotional" --> H
+
+    M --> SUB
+    N --> SUB
+    O --> SUB
+    P --> SUB
+
+    SUB["Sub-Agent reads conversation history\nAlready knows what user wants"]
+    SUB --> T["Sub-Agent calls its tools\ne.g. get_balance, block_card, make_payment"]
+    T --> U["Tool returns result"]
+    U --> V["Sub-Agent tells user the result\n(text → TTS → speaker)"]
+    V --> W["HANDOVER → back to Router Agent"]
+
+    W --> ANYTHING{"Router: 'Anything else?'"}
+    ANYTHING -- "User says yes / new request" --> K
+    ANYTHING -- "User says no" --> BYE["Router says goodbye"]
+    BYE --> END

@@ -3,6 +3,7 @@ import React from 'react'
 const models = [
   { value: 'anthropic', label: 'Claude (Anthropic)' },
   { value: 'sarvam', label: 'Sarvam-30B' },
+  { value: 'sarvam-105b', label: 'Sarvam-105B' },
 ]
 
 export default function ModelSelector({ selectedModel, onModelChange, disabled }) {

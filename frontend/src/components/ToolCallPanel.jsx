@@ -59,15 +59,16 @@ const styles = {
     background: '#1e293b',
     borderRadius: '12px',
     overflow: 'hidden',
+    border: '1px solid #293548',
   },
   header: {
     padding: '12px 16px',
-    fontSize: '13px',
+    fontSize: '12px',
     fontWeight: 600,
     color: '#94a3b8',
     borderBottom: '1px solid #334155',
     textTransform: 'uppercase',
-    letterSpacing: '0.5px',
+    letterSpacing: '0.6px',
   },
   list: {
     padding: '8px',

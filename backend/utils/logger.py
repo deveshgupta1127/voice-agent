@@ -1,3 +1,4 @@
+import csv
 import json
 import logging
 import os
@@ -6,8 +7,54 @@ from pathlib import Path
 
 LOGS_DIR = Path(__file__).parent.parent / "logs"
 SESSION_LOGS_DIR = LOGS_DIR / "sessions"
+LATENCY_LOG = LOGS_DIR / "latency.csv"
 
 logger = logging.getLogger("voice_agent")
+
+_LATENCY_FIELDS = ["timestamp", "session_id", "provider", "turn",
+                   "response_ms", "total_ms", "stt_ms", "llm_ms",
+                   "tts_ttfb_ms", "tts_ms", "wait_ms", "emit_ms", "recovery_ms", "tool_ms"]
+
+
+def log_latency(session_id: str, provider: str, metrics: dict) -> None:
+    """Append one turn's latency to logs/latency.csv for offline analysis.
+
+    response_ms = user stopped speaking -> agent's first audio (what users feel).
+    total_ms    = user stopped speaking -> agent finished speaking.
+    tts_ttfb_ms = first sentence sent to TTS -> first audio chunk (pure TTS speed).
+    tts_ms      = ACTIVE Sarvam synthesis only (browser-send + LLM-gap excluded).
+    wait_ms     = TTS sat idle waiting for the (slow) LLM to stream more text.
+    emit_ms     = time spent pushing audio to the browser (backpressure).
+    recovery_ms = socket warm/reconnect paid on the hot path (~0 when pre-warmed).
+    """
+    try:
+        LOGS_DIR.mkdir(exist_ok=True)
+        new_file = not LATENCY_LOG.exists()
+        if not new_file:
+            # Schema changed? Rotate the old file so columns don't silently misalign.
+            try:
+                with open(LATENCY_LOG, "r", encoding="utf-8") as f:
+                    header = f.readline().strip().split(",")
+                if header != _LATENCY_FIELDS:
+                    LATENCY_LOG.replace(LATENCY_LOG.with_name("latency.old.csv"))
+                    new_file = True
+            except Exception:
+                pass
+        with open(LATENCY_LOG, "a", newline="", encoding="utf-8") as f:
+            w = csv.writer(f)
+            if new_file:
+                w.writerow(_LATENCY_FIELDS)
+            w.writerow([
+                datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                session_id, provider, metrics.get("turn"),
+                metrics.get("response_ms"), metrics.get("total_ms"),
+                metrics.get("stt_ms"), metrics.get("llm_ms"),
+                metrics.get("tts_ttfb_ms"), metrics.get("tts_ms"),
+                metrics.get("wait_ms"), metrics.get("emit_ms"),
+                metrics.get("recovery_ms"), metrics.get("tool_ms"),
+            ])
+    except Exception as e:
+        logger.warning("latency log write failed: %s", e)
 
 
 def setup_logging():
